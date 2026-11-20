@@ -1,0 +1,152 @@
+{
+  "uid": "pipelineops",
+  "title": "PipelineOps",
+  "tags": [
+    "orders",
+    "local"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Failed runs",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pipelineops-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pipelineops-prom"
+          },
+          "expr": "sum(pipelineops_runs_total{outcome=\"failed\"})",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Successful retries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pipelineops-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pipelineops-prom"
+          },
+          "expr": "sum(pipelineops_runs_total{outcome=\"succeeded\",retry=\"true\"})",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Validation violations",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pipelineops-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pipelineops-prom"
+          },
+          "expr": "pipelineops_validation_failures_total",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Terminal runs by outcome and retry",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pipelineops-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pipelineops-prom"
+          },
+          "expr": "pipelineops_runs_total",
+          "instant": false,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Mean elapsed time (seconds)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "pipelineops-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "pipelineops-prom"
+          },
+          "expr": "pipelineops_run_duration_seconds_sum / clamp_min(pipelineops_run_duration_seconds_count, 1)",
+          "instant": false,
+          "range": true
+        }
+      ]
+    }
+  ]
+}

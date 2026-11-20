@@ -1,0 +1,149 @@
+x-application: &application
+  image: pipelineops-local-api:1
+  build:
+    context: .
+  environment: &application-env
+    DATABASE_URL: postgresql+psycopg://pipeline:pipeline-local@db:5432/pipeline
+    PIPELINE_FIRST_SOURCE_DATE: "${PIPELINE_FIRST_SOURCE_DATE:-2025-01-01}"
+    PIPELINE_WINDOW_DAYS: "${PIPELINE_WINDOW_DAYS:-1}"
+
+x-airflow: &airflow
+  image: pipelineops-local-airflow:1
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  volumes:
+    - airflow-logs:/opt/airflow/logs
+  environment:
+    <<: *application-env
+    DATABASE_URL: postgresql+psycopg2://pipeline:pipeline-local@db:5432/pipeline
+    AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+    AIRFLOW__WEBSERVER__WORKERS: "1"
+    DO_NOT_TRACK: "1"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://pipeline:pipeline-local@db:5432/airflow
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    AIRFLOW__WEBSERVER__SECRET_KEY: pipelineops-local-airflow-secret
+    PIPELINE_SCHEDULE: "${PIPELINE_SCHEDULE:-0 4 * * *}"
+    PIPELINE_SCHEDULE_WORKSPACE: "${PIPELINE_SCHEDULE_WORKSPACE:-north}"
+
+services:
+  db:
+    image: postgres:16.8-alpine
+    environment:
+      POSTGRES_DB: pipeline
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: pipeline-local
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./scripts/init-airflow.sql:/docker-entrypoint-initdb.d/001-airflow.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -h localhost -U pipeline -d pipeline && pg_isready -h localhost -U pipeline -d airflow"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  migrate:
+    <<: *application
+    command: ["python","-m","ops.db"]
+    depends_on:
+      db: {condition: service_healthy}
+  source:
+    <<: *application
+    command: ["uvicorn","ops.source:app","--host","0.0.0.0","--port","8080","--no-access-log"]
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request as u; u.urlopen('http://localhost:8080/health')"]
+      interval: 4s
+      timeout: 3s
+      retries: 15
+  airflow-init:
+    <<: *airflow
+    command:
+      - bash
+      - -ec
+      - |
+        airflow db migrate
+        if ! airflow users list --output json | python -c 'import json, sys; sys.exit(not any(u["username"] == "pipeline" for u in json.load(sys.stdin)))'; then
+          airflow users create --username pipeline --password local-airflow-demo --firstname Demo --lastname Operator --role Admin --email pipeline@example.invalid
+        fi
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  airflow-web:
+    <<: *airflow
+    command: webserver
+    ports: ["127.0.0.1:${AIRFLOW_PORT:-8080}:8080"]
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD","curl","-fsS","http://localhost:8080/health"]
+      interval: 8s
+      timeout: 5s
+      retries: 30
+  airflow-scheduler:
+    <<: *airflow
+    command: scheduler
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+      source: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL","airflow jobs check --job-type SchedulerJob --local"]
+      interval: 15s
+      timeout: 12s
+      retries: 20
+  api:
+    <<: *application
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      airflow-web: {condition: service_healthy}
+      airflow-scheduler: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request as u; u.urlopen('http://localhost:8000/health/ready')"]
+      interval: 4s
+      timeout: 4s
+      retries: 20
+  web:
+    build: ./web
+    ports: ["127.0.0.1:${WEB_PORT:-5173}:80"]
+    depends_on:
+      api: {condition: service_healthy}
+  browser-tests:
+    profiles: [test]
+    build:
+      context: ./web
+      dockerfile: Dockerfile.test
+    environment:
+      PIPELINEOPS_WEB: http://web
+    shm_size: 1gb
+    depends_on: [web]
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    depends_on:
+      api: {condition: service_healthy}
+  grafana:
+    image: grafana/grafana:11.6.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: grafana-demo
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
+      - ./monitoring/grafana/dashboards/pipelineops.json:/etc/grafana/pipelineops/pipelineops.json:ro
+      - grafana:/var/lib/grafana
+    depends_on: [prometheus]
+volumes:
+  airflow-logs:
+  database:
+  prometheus:
+  grafana:

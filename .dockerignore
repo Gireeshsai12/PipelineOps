@@ -1,0 +1,6 @@
+**/__pycache__
+**/.pytest_cache
+web
+**/node_modules
+dbt/target
+dbt/logs

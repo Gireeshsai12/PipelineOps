@@ -1,0 +1,8 @@
+FROM apache/airflow:2.10.5-python3.12
+RUN pip install --no-cache-dir "apache-airflow==2.10.5" "psycopg2-binary==2.9.11" "SQLAlchemy==1.4.54" "httpx==0.28.1" "pydantic==2.11.3"
+COPY --chown=airflow:root requirements-dbt.lock /opt/airflow/requirements-dbt.lock
+RUN python -m venv /opt/airflow/dbt-venv && /opt/airflow/dbt-venv/bin/pip install --no-cache-dir -r /opt/airflow/requirements-dbt.lock
+COPY --chown=airflow:root ops /opt/airflow/project/ops
+COPY --chown=airflow:root dbt /opt/airflow/project/dbt
+COPY --chown=airflow:root dags /opt/airflow/dags
+ENV PYTHONPATH=/opt/airflow/project DBT_BIN=/opt/airflow/dbt-venv/bin/dbt

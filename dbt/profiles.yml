@@ -1,0 +1,12 @@
+pipelineops:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('DB_HOST', 'db') }}"
+      port: "{{ env_var('DB_PORT', '5432') | int }}"
+      user: "{{ env_var('DB_USER', 'pipeline') }}"
+      password: "{{ env_var('DB_PASSWORD', 'pipeline-local') }}"
+      dbname: "{{ env_var('DB_NAME', 'pipeline') }}"
+      schema: analytics
+      threads: 2

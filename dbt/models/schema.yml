@@ -1,0 +1,38 @@
+version: 2
+sources:
+  - name: operations
+    schema: public
+    tables:
+      - name: workspaces
+      - name: orders
+      - name: validation_failures
+      - name: runs
+models:
+  - name: daily_order_totals
+    columns:
+      - name: workspace_day
+        data_tests: [unique, not_null]
+      - name: workspace
+        data_tests:
+          - not_null
+          - relationships:
+              to: source('operations', 'workspaces')
+              field: id
+      - name: order_date
+        data_tests: [not_null]
+      - name: order_total
+        data_tests: [not_null]
+  - name: data_quality_trends
+    columns:
+      - name: workspace_day
+        data_tests: [unique, not_null]
+      - name: workspace
+        data_tests:
+          - not_null
+          - relationships:
+              to: source('operations', 'workspaces')
+              field: id
+      - name: source_date
+        data_tests: [not_null]
+      - name: rejected_orders
+        data_tests: [not_null]
